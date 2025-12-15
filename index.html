@@ -531,19 +531,43 @@
            RESPONSIVE: MOBILE LAYOUT
            Keep book visualization with swipe navigation
         ======================================== */
-        @media (max-width: 768px) {
+        @media (max-width: 900px) {
             body {
                 overflow: hidden;
             }
 
             .book-container {
-                width: 100%;
+                width: 90vw;
+                height: 70vh;
                 max-width: 100%;
             }
 
             .book {
                 height: 100%;
                 animation: none;
+            }
+
+            /* Tighter pages and smaller text on mobile */
+            .page-left,
+            .page-right {
+                padding: 30px 20px;
+            }
+
+            .page-content h1 {
+                font-size: 32px;
+            }
+
+            .page-content h2 {
+                font-size: 24px;
+            }
+
+            .page-content h3 {
+                font-size: 20px;
+            }
+
+            .page-content p,
+            .page-content li {
+                font-size: 14px;
             }
 
             /* Hide custom cursor on mobile, keep system cursor */
@@ -560,13 +584,19 @@
             .contact-form button {
                 cursor: pointer;
             }
+
+            /* Hide desktop navigation controls on mobile */
+            .nav-arrow,
+            .page-indicator {
+                display: none;
+            }
         }
     </style>
 </head>
 <body>
     <!-- Custom pencil cursor -->
     <div id="cursor">
-        <img src="Pen.png" alt="Pen cursor" style="width: 100%; height: 100%; object-fit: contain;">
+        <img src="pen.png" alt="Pen cursor" style="width: 100%; height: 100%; object-fit: contain;">
     </div>
 
     <!-- Wooden table surface -->
