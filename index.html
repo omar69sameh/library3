@@ -551,15 +551,6 @@
             .page-left,
             .page-right {
                 padding: 30px 20px;
-                width: 100%;
-                left: 0;
-                right: auto;
-                border: none;
-            }
-
-            /* Mobile: show only one page per spread to avoid cramped layout */
-            .page-right {
-                display: none;
             }
 
             .page-content h1 {
@@ -768,19 +759,32 @@
         ======================================== */
         
         // Current page tracking
-        let currentPage = 0;
-        const totalPages = 4;
+        let currentPageIndex = 0;
+        const spreads = document.querySelectorAll('.page-spread');
+        const totalPages = spreads.length;
         
-        // Animation state flags
-        let isFlipping = false;
-        let isDragging = false;
-        let startX = 0;
-        let currentX = 0;
+        // Animation / navigation state
+        let isAnimating = false;
+        let direction = null; // 'next' | 'prev' | null
+        
+        // Gesture state (mouse + touch)
+        const gesture = {
+            active: false,
+            locked: false,
+            lockType: null, // 'horizontal' | 'vertical' | null
+            startX: 0,
+            startY: 0,
+            lastX: 0,
+            lastY: 0
+        };
+        
+        const HORIZONTAL_LOCK_THRESHOLD = 10;
+        const VERTICAL_LOCK_THRESHOLD = 10;
+        const SWIPE_FLIP_THRESHOLD = 80;
         
         // DOM element references
         const book = document.querySelector('.book');
         const bookContainer = document.querySelector('.book-container');
-        const spreads = document.querySelectorAll('.page-spread');
         const leftArrow = document.querySelector('.nav-arrow.left');
         const rightArrow = document.querySelector('.nav-arrow.right');
         const indicators = document.querySelectorAll('.indicator-dot');
@@ -815,106 +819,109 @@
         });
 
         /* ========================================
-           PAGE FLIP ANIMATION FUNCTION
-           Creates realistic page turn effect
+           PAGE FLIP ANIMATION & STATE
+           Creates realistic page turn effect with sync
         ======================================== */
-        function flipPage(direction) {
-            if (isFlipping) return;
 
-            // Calculate target page
-            const targetPage = direction === 'next' ? currentPage + 1 : currentPage - 1;
-
-            // Validate page bounds
-            if (targetPage < 0 || targetPage >= totalPages) return;
-
-            isFlipping = true;
-
-            // Prepare flipping-page side and origin based on direction
-            if (direction === 'next') {
-                // Flipping the right page to the left
-                flippingPage.style.left = '50%';
-                flippingPage.style.transformOrigin = 'left center';
-            } else {
-                // Flipping the left page to the right
-                flippingPage.style.left = '0';
-                flippingPage.style.transformOrigin = 'right center';
-            }
-
-            flippingPage.style.display = 'block';
-            flippingPage.style.transform = 'rotateY(0deg)';
-
-            // Animate page flip with realistic rotation
-            const startRotation = 0;
-            const endRotation = direction === 'next' ? -180 : 180;
-
-            const duration = 900; // milliseconds - natural, slightly faster
-            const startTime = performance.now();
-
-            function animate(now) {
-                const elapsed = now - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-
-                // Easing function for natural motion
-                const eased = easeInOutCubic(progress);
-                const rotation = startRotation + (endRotation - startRotation) * eased;
-
-                // Apply 3D rotation to flipping page
-                flippingPage.style.transform = `rotateY(${rotation}deg)`;
-
-                // Add curved deformation effect
-                const curve = Math.sin(progress * Math.PI) * 20;
-                const shadowOffset = 5 + curve;
-                const shadowBlur = 20 + curve;
-                const shadowAlpha = 0.3 + progress * 0.2;
-                const shadowSign = direction === 'next' ? '-' : '';
-                flippingPage.style.boxShadow = `
-                    ${shadowSign}${shadowOffset}px 0 ${shadowBlur}px rgba(0,0,0,${shadowAlpha})
-                `;
-
-                if (progress < 1) {
-                    requestAnimationFrame(animate);
-                } else {
-                    // Animation complete: now switch the actual content
-                    updatePage(targetPage);
-                    flippingPage.style.display = 'none';
-                    flippingPage.style.transform = 'rotateY(0deg)';
-                    isFlipping = false;
-                }
-            }
-
-            requestAnimationFrame(animate);
+        function canGoNext() {
+            return currentPageIndex < totalPages - 1 && !isAnimating;
         }
 
-        /* ========================================
-           EASING FUNCTION
-           Smooth acceleration/deceleration
-        ======================================== */
-        function easeInOutCubic(t) {
-            return t < 0.5 
-                ? 4 * t * t * t 
-                : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        function canGoPrev() {
+            return currentPageIndex > 0 && !isAnimating;
         }
 
-        /* ========================================
-           UPDATE PAGE DISPLAY
-           Switches active spread and updates UI
-        ======================================== */
-        function updatePage(newPage) {
-            currentPage = newPage;
-            
+        function updateUI() {
             // Update spread visibility
             spreads.forEach((spread, index) => {
-                spread.classList.toggle('active', index === currentPage);
+                spread.classList.toggle('active', index === currentPageIndex);
             });
             
             // Update navigation arrows
-            leftArrow.classList.toggle('disabled', currentPage === 0);
-            rightArrow.classList.toggle('disabled', currentPage === totalPages - 1);
+            leftArrow.classList.toggle('disabled', currentPageIndex === 0);
+            rightArrow.classList.toggle('disabled', currentPageIndex === totalPages - 1);
             
             // Update indicator dots
             indicators.forEach((dot, index) => {
-                dot.classList.toggle('active', index === currentPage);
+                dot.classList.toggle('active', index === currentPageIndex);
             });
+        }
+
+        function startFlipAnimation(dir) {
+            return new Promise((resolve) => {
+                const activeSpread = spreads[currentPageIndex];
+                if (!activeSpread) {
+                    resolve();
+                    return;
+                }
+
+                // Copy current visible content into flipping page
+                flippingPage.innerHTML = activeSpread.outerHTML;
+                flippingPage.style.display = 'block';
+                flippingPage.style.transition = 'none';
+
+                if (dir === 'next') {
+                    flippingPage.style.left = '50%';
+                    flippingPage.style.transformOrigin = 'left center';
+                    flippingPage.style.transform = 'rotateY(0deg)';
+                    flippingPage.style.boxShadow = '-5px 0 20px rgba(0,0,0,0.3)';
+                } else {
+                    flippingPage.style.left = '0';
+                    flippingPage.style.transformOrigin = 'right center';
+                    flippingPage.style.transform = 'rotateY(-180deg)';
+                    flippingPage.style.boxShadow = '-18px 0 35px rgba(0,0,0,0.55)';
+                }
+
+                // Force reflow
+                void flippingPage.offsetWidth;
+
+                // Start transition
+                flippingPage.style.transition = 'transform 0.8s cubic-bezier(0.25, 0.1, 0.25, 1), box-shadow 0.8s ease';
+                if (dir === 'next') {
+                    flippingPage.style.transform = 'rotateY(-180deg)';
+                    flippingPage.style.boxShadow = '-18px 0 35px rgba(0,0,0,0.55)';
+                } else {
+                    flippingPage.style.transform = 'rotateY(0deg)';
+                    flippingPage.style.boxShadow = '-5px 0 20px rgba(0,0,0,0.3)';
+                }
+
+                function onEnd(e) {
+                    if (e.target !== flippingPage) return;
+                    flippingPage.removeEventListener('transitionend', onEnd);
+                    flippingPage.style.display = 'none';
+                    flippingPage.style.transition = 'none';
+                    flippingPage.style.transform = '';
+                    flippingPage.style.boxShadow = '';
+                    flippingPage.innerHTML = '';
+                    resolve();
+                }
+
+                flippingPage.addEventListener('transitionend', onEnd);
+            });
+        }
+
+        async function requestFlip(dir) {
+            if (isAnimating) return;
+            if (dir === 'next' && !canGoNext()) return;
+            if (dir === 'prev' && !canGoPrev()) return;
+
+            isAnimating = true;
+            direction = dir;
+
+            // Run visual flip while content remains the same
+            await startFlipAnimation(dir);
+
+            // After animation completes, update index/content
+            if (dir === 'next') {
+                currentPageIndex += 1;
+            } else {
+                currentPageIndex -= 1;
+            }
+
+            updateUI();
+
+            isAnimating = false;
+            direction = null;
         }
 
         /* ========================================
@@ -922,22 +929,19 @@
            Arrow clicks and keyboard controls
         ======================================== */
         leftArrow.addEventListener('click', () => {
-            if (isFlipping) return;
-            flipPage('prev');
+            requestFlip('prev');
         });
 
         rightArrow.addEventListener('click', () => {
-            if (isFlipping) return;
-            flipPage('next');
+            requestFlip('next');
         });
 
         // Keyboard navigation
         document.addEventListener('keydown', (e) => {
-            if (isFlipping) return;
             if (e.key === 'ArrowLeft') {
-                flipPage('prev');
+                requestFlip('prev');
             } else if (e.key === 'ArrowRight') {
-                flipPage('next');
+                requestFlip('next');
             }
         });
 
@@ -947,10 +951,16 @@
         ======================================== */
         indicators.forEach((dot, index) => {
             dot.addEventListener('click', () => {
-                if (index !== currentPage && !isFlipping) {
-                    const direction = index > currentPage ? 'next' : 'prev';
-                    flipPage(direction);
-                }
+                if (isAnimating || index === currentPageIndex) return;
+
+                const steps = Math.abs(index - currentPageIndex);
+                const dir = index > currentPageIndex ? 'next' : 'prev';
+
+                (async () => {
+                    for (let i = 0; i < steps; i++) {
+                        await requestFlip(dir);
+                    }
+                })();
             });
         });
 
@@ -964,7 +974,8 @@
 
         // Mouse wheel vertical scroll
         document.addEventListener('wheel', (e) => {
-            if (window.innerWidth <= 768 || isFlipping) return;
+            if (window.innerWidth <= 768) return;
+            if (isAnimating) return;
             
             e.preventDefault();
             
@@ -974,97 +985,118 @@
             // Debounce scroll events for smoother experience
             scrollTimeout = setTimeout(() => {
                 // Scroll down (positive deltaY) = next page
-                if (lastScrollDelta > 30 && currentPage < totalPages - 1) {
-                    flipPage('next');
+                if (lastScrollDelta > 30 && canGoNext()) {
+                    requestFlip('next');
                 } 
                 // Scroll up (negative deltaY) = previous page
-                else if (lastScrollDelta < -30 && currentPage > 0) {
-                    flipPage('prev');
+                else if (lastScrollDelta < -30 && canGoPrev()) {
+                    requestFlip('prev');
                 }
                 lastScrollDelta = 0;
             }, 50);
         }, { passive: false });
 
         /* ========================================
-           DRAG TO FLIP FUNCTIONALITY
-           Mouse/touch drag to turn pages
+           DRAG / SWIPE GESTURE HANDLING
+           Mouse/touch drag to turn pages with lock
         ======================================== */
+
+        function beginGesture(x, y) {
+            if (isAnimating) return;
+            gesture.active = true;
+            gesture.locked = false;
+            gesture.lockType = null;
+            gesture.startX = gesture.lastX = x;
+            gesture.startY = gesture.lastY = y;
+        }
+
+        function moveGesture(x, y) {
+            if (!gesture.active) return;
+            gesture.lastX = x;
+            gesture.lastY = y;
+
+            const dx = x - gesture.startX;
+            const dy = y - gesture.startY;
+
+            if (!gesture.locked) {
+                if (Math.abs(dx) > HORIZONTAL_LOCK_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
+                    gesture.locked = true;
+                    gesture.lockType = 'horizontal';
+                } else if (Math.abs(dy) > VERTICAL_LOCK_THRESHOLD && Math.abs(dy) > Math.abs(dx)) {
+                    gesture.locked = true;
+                    gesture.lockType = 'vertical';
+                }
+            }
+
+            // Optional: small tilt visual when dragging horizontally
+            if (gesture.lockType === 'horizontal') {
+                const clamped = Math.max(Math.min(dx, 150), -150);
+                const tilt = (clamped / 150) * 8;
+                book.style.transform = `
+                    rotateX(10deg)
+                    rotateY(${tilt}deg)
+                `;
+            }
+        }
+
+        async function endGesture() {
+            if (!gesture.active) return;
+            const dx = gesture.lastX - gesture.startX;
+
+            if (gesture.lockType === 'horizontal' && !isAnimating) {
+                if (dx > SWIPE_FLIP_THRESHOLD && canGoPrev()) {
+                    await requestFlip('prev');
+                } else if (dx < -SWIPE_FLIP_THRESHOLD && canGoNext()) {
+                    await requestFlip('next');
+                }
+            }
+
+            gesture.active = false;
+            gesture.locked = false;
+            gesture.lockType = null;
+
+            // Reset book tilt
+            setTimeout(() => {
+                book.style.transform = 'rotateX(10deg) rotateY(0deg)';
+            }, 100);
+        }
+
+        // Mouse / pointer (desktop)
         bookContainer.addEventListener('mousedown', (e) => {
-            if (window.innerWidth <= 768 || isFlipping) return;
-            isDragging = true;
-            startX = e.clientX;
+            if (window.innerWidth <= 768) return;
+            beginGesture(e.clientX, e.clientY);
             bookContainer.style.cursor = 'grabbing';
         });
 
         document.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-            currentX = e.clientX;
-            const deltaX = currentX - startX;
-            
-            // Visual feedback during drag
-            if (Math.abs(deltaX) > 20) {
-                const direction = deltaX > 0 ? 1 : -1;
-                book.style.transform = `
-                    rotateX(10deg) 
-                    rotateY(${direction * Math.min(Math.abs(deltaX) / 20, 5)}deg)
-                `;
+            moveGesture(e.clientX, e.clientY);
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (gesture.active) {
+                endGesture();
+                bookContainer.style.cursor = 'grab';
             }
         });
 
-        document.addEventListener('mouseup', (e) => {
-            if (!isDragging) return;
-            
-            const deltaX = currentX - startX;
-            
-            // Threshold for page flip: 100px drag
-            if (deltaX > 100 && currentPage > 0) {
-                flipPage('prev');
-            } else if (deltaX < -100 && currentPage < totalPages - 1) {
-                flipPage('next');
-            }
-            
-            // Reset drag state
-            isDragging = false;
-            startX = 0;
-            currentX = 0;
-            bookContainer.style.cursor = 'grab';
-            
-            // Reset book rotation
-            setTimeout(() => {
-                book.style.transform = 'rotateX(10deg) rotateY(0deg)';
-            }, 100);
-        });
-
-        /* ========================================
-           TOUCH EVENTS FOR MOBILE
-           Swipe gesture support
-        ======================================== */
-        let touchStartX = 0;
-        let touchEndX = 0;
-
+        // Touch (mobile)
         bookContainer.addEventListener('touchstart', (e) => {
-            if (isFlipping) return;
-            touchStartX = e.changedTouches[0].screenX;
+            const t = e.changedTouches[0];
+            if (!t) return;
+            beginGesture(t.clientX, t.clientY);
         });
 
-        bookContainer.addEventListener('touchend', (e) => {
-            if (isFlipping) return;
-            touchEndX = e.changedTouches[0].screenX;
-            handleSwipe();
+        bookContainer.addEventListener('touchmove', (e) => {
+            const t = e.changedTouches[0];
+            if (!t) return;
+            moveGesture(t.clientX, t.clientY);
         });
 
-        function handleSwipe() {
-            const swipeThreshold = 50;
-            const diff = touchStartX - touchEndX;
-            
-            if (diff > swipeThreshold) {
-                // Swipe left - next page
-                flipPage('next');
-            } else if (diff < -swipeThreshold) {
-                // Swipe right - previous page
-                flipPage('prev');
+        bookContainer.addEventListener('touchend', () => {
+            if (gesture.active) {
+                endGesture();
             }
-        }
+        });
 
         /* ========================================
            RESPONSIVE BEHAVIOR
@@ -1078,16 +1110,17 @@
 
                 // On mobile still show only the current spread
                 spreads.forEach((spread, index) => {
-                    spread.classList.toggle('active', index === currentPage);
+                    spread.classList.toggle('active', index === currentPageIndex);
                 });
             } else {
                 // Desktop: enable animations
                 book.style.animation = 'breathe 4s ease-in-out infinite';
-                updatePage(currentPage);
+                updateUI();
             }
         }
 
         // Check on load and resize
+        updateUI();
         checkResponsive();
         window.addEventListener('resize', checkResponsive);
 
