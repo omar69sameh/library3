@@ -91,8 +91,8 @@
             transform: translate(-50%, -50%);
             perspective: 2000px;
             perspective-origin: 50% 50%;
-            width: 900px;
-            height: 600px;
+            width: 1000px;
+            height: 550px;
             transition: transform 0.3s ease;
         }
 
@@ -544,10 +544,10 @@
             }
 
             .book-container {
-                width: 85vw;
-                height: 60vh;
+                width: 90vw;
+                height: 55vh;
                 max-width: 100%;
-                max-height: 500px;
+                max-height: 450px;
             }
 
             .book {
@@ -1145,9 +1145,12 @@
             const dx = gesture.lastX - gesture.startX;
 
             if (gesture.lockType === 'horizontal' && !isAnimating) {
+                // Swipe right (dx > 0) = go to previous page (flip from right to left)
                 if (dx > SWIPE_FLIP_THRESHOLD && canGoPrev()) {
                     await requestFlip('prev');
-                } else if (dx < -SWIPE_FLIP_THRESHOLD && canGoNext()) {
+                } 
+                // Swipe left (dx < 0) = go to next page (flip from left to right)
+                else if (dx < -SWIPE_FLIP_THRESHOLD && canGoNext()) {
                     await requestFlip('next');
                 }
             }
