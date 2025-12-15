@@ -551,6 +551,15 @@
             .page-left,
             .page-right {
                 padding: 30px 20px;
+                width: 100%;
+                left: 0;
+                right: auto;
+                border: none;
+            }
+
+            /* Mobile: show only one page per spread to avoid cramped layout */
+            .page-right {
+                display: none;
             }
 
             .page-content h1 {
@@ -811,56 +820,69 @@
         ======================================== */
         function flipPage(direction) {
             if (isFlipping) return;
-            
+
             // Calculate target page
             const targetPage = direction === 'next' ? currentPage + 1 : currentPage - 1;
-            
+
             // Validate page bounds
             if (targetPage < 0 || targetPage >= totalPages) return;
-            
+
             isFlipping = true;
-            
-            // Update page content immediately to avoid delay
-            updatePage(targetPage);
-            
-            // Show flipping page element
+
+            // Prepare flipping-page side and origin based on direction
+            if (direction === 'next') {
+                // Flipping the right page to the left
+                flippingPage.style.left = '50%';
+                flippingPage.style.transformOrigin = 'left center';
+            } else {
+                // Flipping the left page to the right
+                flippingPage.style.left = '0';
+                flippingPage.style.transformOrigin = 'right center';
+            }
+
             flippingPage.style.display = 'block';
-            
+            flippingPage.style.transform = 'rotateY(0deg)';
+
             // Animate page flip with realistic rotation
-            const startRotation = direction === 'next' ? 0 : -180;
-            const endRotation = direction === 'next' ? -180 : 0;
-            
-            let progress = 0;
-            const duration = 1200; // milliseconds - smoother, slower animation
-            const startTime = Date.now();
-            
-            function animate() {
-                const elapsed = Date.now() - startTime;
-                progress = Math.min(elapsed / duration, 1);
-                
+            const startRotation = 0;
+            const endRotation = direction === 'next' ? -180 : 180;
+
+            const duration = 900; // milliseconds - natural, slightly faster
+            const startTime = performance.now();
+
+            function animate(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+
                 // Easing function for natural motion
                 const eased = easeInOutCubic(progress);
                 const rotation = startRotation + (endRotation - startRotation) * eased;
-                
+
                 // Apply 3D rotation to flipping page
                 flippingPage.style.transform = `rotateY(${rotation}deg)`;
-                
+
                 // Add curved deformation effect
                 const curve = Math.sin(progress * Math.PI) * 20;
+                const shadowOffset = 5 + curve;
+                const shadowBlur = 20 + curve;
+                const shadowAlpha = 0.3 + progress * 0.2;
+                const shadowSign = direction === 'next' ? '-' : '';
                 flippingPage.style.boxShadow = `
-                    -${5 + curve}px 0 ${20 + curve}px rgba(0,0,0,${0.3 + progress * 0.2})
+                    ${shadowSign}${shadowOffset}px 0 ${shadowBlur}px rgba(0,0,0,${shadowAlpha})
                 `;
-                
+
                 if (progress < 1) {
                     requestAnimationFrame(animate);
                 } else {
-                    // Animation complete
+                    // Animation complete: now switch the actual content
+                    updatePage(targetPage);
                     flippingPage.style.display = 'none';
+                    flippingPage.style.transform = 'rotateY(0deg)';
                     isFlipping = false;
                 }
             }
-            
-            animate();
+
+            requestAnimationFrame(animate);
         }
 
         /* ========================================
@@ -900,15 +922,18 @@
            Arrow clicks and keyboard controls
         ======================================== */
         leftArrow.addEventListener('click', () => {
+            if (isFlipping) return;
             flipPage('prev');
         });
 
         rightArrow.addEventListener('click', () => {
+            if (isFlipping) return;
             flipPage('next');
         });
 
         // Keyboard navigation
         document.addEventListener('keydown', (e) => {
+            if (isFlipping) return;
             if (e.key === 'ArrowLeft') {
                 flipPage('prev');
             } else if (e.key === 'ArrowRight') {
@@ -939,7 +964,7 @@
 
         // Mouse wheel vertical scroll
         document.addEventListener('wheel', (e) => {
-            if (window.innerWidth <= 768) return;
+            if (window.innerWidth <= 768 || isFlipping) return;
             
             e.preventDefault();
             
@@ -965,7 +990,7 @@
            Mouse/touch drag to turn pages
         ======================================== */
         bookContainer.addEventListener('mousedown', (e) => {
-            if (window.innerWidth <= 768) return;
+            if (window.innerWidth <= 768 || isFlipping) return;
             isDragging = true;
             startX = e.clientX;
             bookContainer.style.cursor = 'grabbing';
@@ -1018,10 +1043,12 @@
         let touchEndX = 0;
 
         bookContainer.addEventListener('touchstart', (e) => {
+            if (isFlipping) return;
             touchStartX = e.changedTouches[0].screenX;
         });
 
         bookContainer.addEventListener('touchend', (e) => {
+            if (isFlipping) return;
             touchEndX = e.changedTouches[0].screenX;
             handleSwipe();
         });
